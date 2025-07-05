@@ -3305,7 +3305,8 @@ int Abc_CommandShow( Abc_Frame_t * pAbc, int argc, char ** argv )
     int fFlopDep;
     int fKeepDot;
     int fAigIds;
-    extern void bdd_xkd(Abc_Ntk_t* pNtk, int fVerbose);
+    char* filename = NULL;
+    extern void bdd_xkd(Abc_Ntk_t* pNtk, int fVerbose,char*filename);
     extern void Abc_NtkShow( Abc_Ntk_t * pNtk, int fGateNames, int fSeq, int fUseReverse, int fKeepDot, int fAigIds );
     extern void Abc_NtkShowFlopDependency( Abc_Ntk_t * pNtk );
 
@@ -3328,7 +3329,13 @@ int Abc_CommandShow( Abc_Frame_t * pAbc, int argc, char ** argv )
             fSeq ^= 1;
             break;
         case 'w':
-            bdd_xkd(pNtk, 0);
+    if (globalUtilOptind >= argc) {
+        printf("Error: option -w requires a filename argument\n");
+        return 1;
+    }
+    filename = argv[globalUtilOptind];
+    globalUtilOptind++;
+            bdd_xkd(pNtk, 0,filename);
             return 0;
         case 'g':
             fGateNames ^= 1;

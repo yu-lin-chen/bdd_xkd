@@ -421,10 +421,10 @@ ddTreeSiftingAux(
 #endif
     auxnode = treenode->child;
     while (auxnode != NULL) {
-        printf("[TREE2] Finished group: index=%d, low=%d, size=%d\n",auxnode->index, auxnode->low, auxnode->size);
+       // printf("[TREE2] Finished group: index=%d, low=%d, size=%d\n",auxnode->index, auxnode->low, auxnode->size);
         if (auxnode->child != NULL) {
-            printf("[TREE] Visiting group: index=%d, low=%d, size=%d\n",
-    auxnode->child->index, auxnode->child->low, auxnode->child->size);
+            //printf("[TREE] Visiting group: index=%d, low=%d, size=%d\n",
+    //auxnode->child->index, auxnode->child->low, auxnode->child->size);
             if (!ddTreeSiftingAux(table, auxnode->child, method))
                 return(0);
             saveCheck = table->groupcheck;
@@ -510,7 +510,7 @@ ddReorderChildren(
     int upper = -1;
     int result;
     unsigned int initialSize;
-printf("Reordering group index %d, low = %d, size = %d\n", treenode->index, lower, upper - lower + 1);
+//printf("Reordering group index %d, low = %d, size = %d\n", treenode->index, lower, upper - lower + 1);
     ddFindNodeHiLo(table,treenode,&lower,&upper);
     /* If upper == -1 these variables do not exist yet. */
     if (upper == -1)

@@ -259,125 +259,145 @@ int DfsBddWithFilter(DdNode *node, int *cube, int nVars, VarInfo **pIndex2Var, s
     cube[index] = -1;
     return 0;
 }
-
+extern char * gCaseBaseName ;
 /* ============================================================= */
 /*        执行BDD DFS分析并输出JSON格式                          */
 /* ============================================================= */
-void bdd_xkd(Abc_Ntk_t* pNtk, int fVerbose)
+void bdd_xkd(Abc_Ntk_t* pNtk, int fVerbose, char *filename)
 {
     st__table *visited = NULL;
-    DdManager *dd;
     DdNode *bFunc;
     Vec_Ptr_t *vFuncsGlob;
     VarInfo **pIndex2Var;
     Abc_Obj_t *pPi, *pObj;
     int i;
 
-    // 构建全局BDD
-    assert(Abc_NtkIsStrash(pNtk));
-    dd = (DdManager *)Abc_NtkBuildGlobalBdds(pNtk, 10000000, 1, 1, 0, 0);
-    if (dd == NULL) {
-        printf("Construction of global BDDs has failed.\n");
+    // 打开输出文件
+    FILE *fp = fopen(filename, "w");
+    if (!fp) {
+        fprintf(stderr, "Cannot open file: %s\n", filename);
         return;
     }
 
-    // 构建映射index → VarInfo*
-    pIndex2Var = ABC_CALLOC(VarInfo *, 100);  // 初始化全为 NULL
-    Abc_NtkForEachPi(pNtk, pPi, i)
-    {
+    // 构建全局BDD
+    assert(Abc_NtkIsStrash(pNtk));
+    if (Abc_NtkBuildGlobalBdds(pNtk, 10000000, 1, 1, 0, 0) == NULL) {
+        printf("Failed to build global BDDs.\n");
+        fclose(fp);
+        return;
+    }
+    DdManager *dd = (DdManager *)Abc_NtkGlobalBddMan(pNtk);
+
+    // 构建 index → VarInfo*
+    int piNum = Abc_NtkPiNum(pNtk);
+    pIndex2Var = ABC_CALLOC(VarInfo *, piNum);
+    Abc_NtkForEachPi(pNtk, pPi, i) {
         VarInfo *pInfo = ABC_ALLOC(VarInfo, 1);
         pInfo->index = i;
         pInfo->name = Abc_ObjName(pPi);
-        pIndex2Var[i] = pInfo;  // 直接建立映射：index → VarInfo*
+        pIndex2Var[i] = pInfo;
     }
 
-    // 创建数组记录每个节点的值
     int nVars = Cudd_ReadSize(dd);
-    // 遍历每个输出节点
     int n = Abc_NtkCoNum(pNtk);
-    vFuncsGlob = Vec_PtrAlloc(Abc_NtkCoNum(pNtk));
+    vFuncsGlob = Vec_PtrAlloc(n);
     Abc_NtkForEachCo(pNtk, pObj, i)
         Vec_PtrPush(vFuncsGlob, Abc_ObjGlobalBdd(pObj));
-    
-    DdNode **pbAdds = ABC_ALLOC(DdNode *, Vec_PtrSize(vFuncsGlob));
-    Vec_PtrForEachEntry(DdNode *, vFuncsGlob, bFunc, i)
-    {
+
+    DdNode **pbAdds = ABC_ALLOC(DdNode *, n);
+    Vec_PtrForEachEntry(DdNode *, vFuncsGlob, bFunc, i) {
         pbAdds[i] = Cudd_BddToAdd(dd, bFunc);
+        if (pbAdds[i] == NULL) {
+            printf("Cudd_BddToAdd failed at output %d\n", i);
+            continue;
+        }
         Cudd_Ref(pbAdds[i]);
     }
-    
-    // 输出JSON格式
-    printf("{\n");
-    printf("  \"input_file_name\":\"case01\",\n");
-    printf("  \"cases\":[\n");
-    
+
+    // 输出 JSON
+    fprintf(stdout, "{\n"); fprintf(fp, "{\n");
+    fprintf(stdout, "  \"input_file_name\":\"%s\",\n", gCaseBaseName);
+    fprintf(fp,     "  \"input_file_name\":\"%s\",\n", gCaseBaseName);
+    fprintf(stdout, "  \"cases\":[\n"); fprintf(fp, "  \"cases\":[\n");
+
     for (i = 0; i < n; i++) {
-        printf("    {\n");
-        printf("      \"name\":\"D[%d]\",\n", i);
-        
-        int *cube = ABC_ALLOC(int, nVars + 10);
-        memset(cube, -1, sizeof(int) * (nVars + 10));
-        
-        // 为每个输出创建新的visited表
+        fprintf(stdout, "    {\n"); fprintf(fp, "    {\n");
+        fprintf(stdout, "      \"name\":\"D[%d]\",\n", i);
+        fprintf(fp,     "      \"name\":\"D[%d]\",\n", i);
+
+        int *cube = ABC_ALLOC(int, nVars);
+        memset(cube, -1, sizeof(int) * nVars);
         visited = st__init_table(st__ptrcmp, st__ptrhash);
         int foundSolution = 0;
-        
-        // 搜索第一个解
+
         DfsBddWithFilter(Cudd_Regular(pbAdds[i]), cube, nVars, pIndex2Var, visited, &foundSolution);
-        
+
         if (foundSolution) {
-            printf("      \"solution\":\"Yes\",\n");
-            printf("      \"assignments\":{\n");
-            
-            // 只输出L变量
+            fprintf(stdout, "      \"solution\":\"Yes\",\n");
+            fprintf(fp,     "      \"solution\":\"Yes\",\n");
+            fprintf(stdout, "      \"assignments\":{\n");
+            fprintf(fp,     "      \"assignments\":{\n");
+
             int firstL = 1;
             for (int j = 0; j < nVars; j++) {
                 VarInfo *pInfo = pIndex2Var[j];
                 if (pInfo == NULL) continue;
                 if (pInfo->name && (pInfo->name[0] == 'L' || pInfo->name[0] == 'l')) {
-                    if (!firstL) printf(",\n");
-                    int value = (cube[j] == -1) ? 0 : cube[j];  // 默认为0
-                    
-                    // 确保输出格式为L[n]，即使原名称可能只是"L"
-                    char *name = pInfo->name;
-                    if (strlen(name) == 1 && (name[0] == 'L' || name[0] == 'l')) {
-                        // 如果名称只是"L"，输出为"L[0]"
-                        printf("        \"L[0]\":%d", value);
+                    if (!firstL) {
+                        fprintf(stdout, ",\n");
+                        fprintf(fp,     ",\n");
+                    }
+                    int value = (cube[j] == -1) ? 0 : cube[j];
+
+                    if (strcmp(pInfo->name, "L") == 0 || strcmp(pInfo->name, "l") == 0) {
+                        fprintf(stdout, "        \"L0\":%d", value);
+                        fprintf(fp,     "        \"L0\":%d", value);
                     } else {
-                        // 如果已经有完整格式如"L[0]"、"L[1]"等，直接使用
-                        printf("        \"%s\":%d", name, value);
+                        char buf[64];
+                        int num;
+                        sscanf(pInfo->name, "L[%d]", &num);
+                        snprintf(buf, sizeof(buf), "L%d", num);
+                        fprintf(stdout, "        \"%s\":%d", buf, value);
+                        fprintf(fp,     "        \"%s\":%d", buf, value);
                     }
                     firstL = 0;
                 }
             }
-            printf("\n      }\n");
+            fprintf(stdout, "\n      }\n");
+            fprintf(fp,     "\n      }\n");
         } else {
-            printf("      \"solution\":\"No\"\n");
+            fprintf(stdout, "      \"solution\":\"No\"\n");
+            fprintf(fp,     "      \"solution\":\"No\"\n");
         }
-        
-        printf("    }");
-        if (i < n - 1) printf(",");
-        printf("\n");
-        
-        ABC_FREE(cube);
-        st__free_table(visited); // 每个输出完成后清理visited表
-    }
-    
-    printf("  ]\n");
-    printf("}\n");
 
-    // 清理内存
-    for (i = 0; i < Vec_PtrSize(vFuncsGlob); i++) {
-           if (pIndex2Var[i])
+        fprintf(stdout, "    }%s\n", i < n - 1 ? "," : "");
+        fprintf(fp,     "    }%s\n", i < n - 1 ? "," : "");
+
+        ABC_FREE(cube);
+        st__free_table(visited);
+    }
+
+    fprintf(stdout, "  ]\n}\n");
+    fprintf(fp,     "  ]\n}\n");
+
+    // 释放资源
+    for (i = 0; i < n; i++) {
+        if (pbAdds[i])
+            Cudd_RecursiveDeref(dd, pbAdds[i]);
+    }
+    ABC_FREE(pbAdds);
+    Vec_PtrFree(vFuncsGlob);
+
+    for (i = 0; i < piNum; i++) {
+        if (pIndex2Var[i])
             ABC_FREE(pIndex2Var[i]);
     }
     ABC_FREE(pIndex2Var);
-    Cudd_RecursiveDeref(dd, pbAdds[i]);
-    
-    ABC_FREE(pbAdds);
-    Vec_PtrFree(vFuncsGlob);   
-    //Extra_StopManager(dd);
+
+    Abc_NtkFreeGlobalBdds(pNtk, 1);
+    fclose(fp);
 }
+
 
     int nS;
     int nX;
@@ -425,7 +445,7 @@ Vec_Ptr_t *vX = Vec_PtrAlloc(16);
     nX = Vec_PtrSize(vX);
     nL = Vec_PtrSize(vL);
 
-    printf("PIs classified: S=%d, X=%d, L=%d\n", nS, nX, nL);
+    //printf("PIs classified: S=%d, X=%d, L=%d\n", nS, nX, nL);
     Vec_PtrFree(vX);
     Vec_PtrFree(vL);
     Vec_PtrFree(vS);

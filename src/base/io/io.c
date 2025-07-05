@@ -204,6 +204,7 @@ void Io_End( Abc_Frame_t * pAbc )
   SeeAlso     []
 
 ***********************************************************************/
+char * gCaseBaseName = NULL;
 int IoCommandRead( Abc_Frame_t * pAbc, int argc, char ** argv )
 {
     char Command[1000];
@@ -243,6 +244,20 @@ int IoCommandRead( Abc_Frame_t * pAbc, int argc, char ** argv )
     // get the input file name
     pFileName = argv[globalUtilOptind];
     // fix the wrong symbol
+    const char *full = pFileName;
+    const char *name = strrchr(full, '/');
+    if (name) name++;
+    else      name = full;
+
+    const char *dot = strrchr(name, '.');
+    size_t len = dot ? (size_t)(dot - name) : strlen(name);
+
+    free(gCaseBaseName);
+    gCaseBaseName = (char *)malloc(len + 1);
+    if (gCaseBaseName) {
+        strncpy(gCaseBaseName, name, len);
+        gCaseBaseName[len] = '\0';
+    }
     for ( pTemp = pFileName; *pTemp; pTemp++ )
         if ( *pTemp == '>' || *pTemp == '\\' )
             *pTemp = '/';
